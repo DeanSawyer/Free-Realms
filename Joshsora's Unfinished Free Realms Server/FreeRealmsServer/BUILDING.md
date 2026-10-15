@@ -25,7 +25,7 @@ The projects use older NuGet dependencies, including log4net 2.0.3, Newtonsoft.J
 
 The GitHub Actions workflow at `.github/workflows/legacy-server-build.yml` restores NuGet dependencies and builds the solution in Release configuration on Windows. It downloads the .NET Framework 4.5 reference-assembly package because the hosted runner may not include this legacy targeting pack.
 
-The first CI attempt restored packages successfully but stopped before C# compilation because the .NET Framework 4.5 reference assemblies were missing. A subsequent run must confirm that the targeting-pack workaround works and expose any actual compiler errors. Until a run completes successfully, treat the solution as **not yet verified to build**.
+The first CI attempt stopped before C# compilation because the .NET Framework 4.5 reference assemblies were missing. The targeting-pack workaround now works: the build reaches C# compilation, where `FreeRealms/Accounts/AccountManager.cs` fails because the bundled `LibSOE.dll` does not expose `SOEConnectionManager.OnDisconnect`, which this source subscribes to. The public `Joshsora/LibSOE` source also has no such event on `SOEConnectionManager`. Do not simply remove the subscription to make CI pass: it is intended to log accounts out on disconnect, so removing it would change server behavior. Resolve the dependency/API mismatch (for example, identify the intended LibSOE revision or provide a compatible source/build) before treating the server build as healthy. The solution remains **not yet verified to build**.
 
 ## Repository hygiene
 
