@@ -131,7 +131,8 @@ namespace FreeRealms.Accounts
             }
 
             SOEClient client;
-            if (ID2Account.TryGetValue(account.ID, out Account currentAccount) && currentAccount == account)
+            Account currentAccount;
+            if (ID2Account.TryGetValue(account.ID, out currentAccount) && currentAccount == account)
             {
                 if (ID2Client.TryGetValue(account.ID, out client))
                 {
@@ -142,7 +143,8 @@ namespace FreeRealms.Accounts
                 ID2Account.Remove(account.ID);
             }
 
-            if (Username2Account.TryGetValue(account.Username, out Account usernameAccount) && usernameAccount == account)
+            Account usernameAccount;
+            if (Username2Account.TryGetValue(account.Username, out usernameAccount) && usernameAccount == account)
             {
                 Username2Account.Remove(account.Username);
             }
