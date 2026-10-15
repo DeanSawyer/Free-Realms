@@ -64,7 +64,7 @@ namespace Gateway.Login
         }
 
             // Login Handler
-        [SOEMessageHandler((ushort) LoginMessages.LoginRequest, "LoginRequest", "CGAPI_527")]
+        [SOEMessageHandler("LoginRequest", (ushort)LoginMessages.LoginRequest, "CGAPI_527")]
         public static void HandleLoginRequest(SOEClient sender, SOEMessage message)
         {
             // Setup a reader
