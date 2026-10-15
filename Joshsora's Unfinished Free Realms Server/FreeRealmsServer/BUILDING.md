@@ -17,7 +17,7 @@ The solution file identifies Visual Studio 2013-era tooling. A newer Visual Stud
 
 The project files refer to older NuGet dependencies, including log4net 2.0.3, Newtonsoft.Json 7.0.1, and DotNetZip 1.9.6. Restore packages from the checked-in `packages.config` files if they are not already available locally.
 
-**LibSOE is an external dependency.** The `FreeRealms` and `Gateway` project files point to a LibSOE DLL using a machine-specific relative path that resolves outside this repository in the original author's directory layout. A clean checkout may fail to build until that reference is supplied or replaced with a reproducible project/package reference.
+**LibSOE is supplied as a prebuilt dependency.** The `FreeRealms` and `Gateway` project references now point to `PrebuiltServer/Daemon/LibSOE.dll`, which is included in this repository, rather than the original author's machine-specific path. This removes that particular path dependency, but does not establish that the source projects build successfully or that the bundled assembly is API-compatible with every source file.
 
 No successful clean build has been confirmed as part of this cleanup. Treat this as documentation of the current project structure, not a claim that the server currently compiles or runs.
 
