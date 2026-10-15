@@ -34,7 +34,7 @@ namespace Gateway.Commands
             Log.Info("Service constructed");
         }
 
-        [SOEMessageHandler((ushort)GatewayMessages.EnqueueCommand, "EnqueueCommand", "CGAPI_527")]
+        [SOEMessageHandler("EnqueueCommand", (ushort)GatewayMessages.EnqueueCommand, "CGAPI_527")]
         public static void HandleEnqueueCommand(SOEClient sender, SOEMessage message)
         {
             // Is this client even authed?

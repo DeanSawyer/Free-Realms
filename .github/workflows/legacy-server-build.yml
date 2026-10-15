@@ -1,0 +1,43 @@
+name: Legacy server build
+
+on:
+  push:
+    paths:
+      - "Joshsora's Unfinished Free Realms Server/FreeRealmsServer/**"
+      - ".github/workflows/legacy-server-build.yml"
+  pull_request:
+    paths:
+      - "Joshsora's Unfinished Free Realms Server/FreeRealmsServer/**"
+      - ".github/workflows/legacy-server-build.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Set up NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Restore solution packages
+        env:
+          SOLUTION: "Joshsora's Unfinished Free Realms Server/FreeRealmsServer/FreeRealmsServer.sln"
+        run: nuget restore "$env:SOLUTION" -NonInteractive
+
+      - name: Download .NET Framework 4.5 reference assemblies
+        run: |
+          nuget install Microsoft.NETFramework.ReferenceAssemblies.net45 -Version 1.0.3 -OutputDirectory "$env:RUNNER_TEMP\reference-assemblies" -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $frameworkPath = Join-Path $env:RUNNER_TEMP "reference-assemblies\Microsoft.NETFramework.ReferenceAssemblies.net45.1.0.3\build\.NETFramework\v4.5"
+          if (-not (Test-Path $frameworkPath)) { throw "Reference assemblies not found at $frameworkPath" }
+          "FrameworkPathOverride=$frameworkPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build Release configuration
+        env:
+          SOLUTION: "Joshsora's Unfinished Free Realms Server/FreeRealmsServer/FreeRealmsServer.sln"
+        run: msbuild "$env:SOLUTION" /m /p:Configuration=Release "/p:Platform=Any CPU" /verbosity:minimal

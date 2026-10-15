@@ -64,7 +64,7 @@ namespace Gateway.Login
         }
 
             // Login Handler
-        [SOEMessageHandler((ushort) LoginMessages.LoginRequest, "LoginRequest", "CGAPI_527")]
+        [SOEMessageHandler("LoginRequest", (ushort)LoginMessages.LoginRequest, "CGAPI_527")]
         public static void HandleLoginRequest(SOEClient sender, SOEMessage message)
         {
             // Setup a reader
@@ -177,7 +177,9 @@ namespace Gateway.Login
 
                         // Environment
                         SOEWriter commandWriter = new SOEWriter(0xA6, true);
-                        commandWriter.AddASCIIString("live");
+                        byte[] environmentName = Encoding.ASCII.GetBytes("live");
+                        commandWriter.AddHostUInt32((uint)environmentName.Length);
+                        commandWriter.AddBytes(environmentName);
                         byte[] environmentCommand = commandWriter.GetRaw();
 
                         SOEWriter writer = new SOEWriter((ushort)GatewayMessages.EnqueueCommand, true);
@@ -188,7 +190,9 @@ namespace Gateway.Login
 
                         // ZoneInfo
                         commandWriter = new SOEWriter(0x2B, true);
-                        commandWriter.AddASCIIString("FabledRealms");
+                        byte[] worldName = Encoding.ASCII.GetBytes("FabledRealms");
+                        commandWriter.AddHostUInt32((uint)worldName.Length);
+                        commandWriter.AddBytes(worldName);
                         commandWriter.AddHostUInt32(2);
                         commandWriter.AddHostUInt32(0);
                         commandWriter.AddHostUInt32(0);
