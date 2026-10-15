@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
 using log4net;
 using SOE;
 using SOE.Core;
@@ -7,6 +9,8 @@ namespace FreeRealms.Accounts
 {
     public static class AccountManager
     {
+        private static readonly object Sync = new object();
+
         // Components
         private static SOEServer Server;
         private static ILog Log;
@@ -19,114 +23,173 @@ namespace FreeRealms.Accounts
 
         public static void Start(SOEServer server)
         {
-            // Set our server
-            Server = server;
+            lock (Sync)
+            {
+                Server = server;
+                Client2Account = new Dictionary<SOEClient, Account>();
+                ID2Client = new Dictionary<uint, SOEClient>();
+                ID2Account = new Dictionary<uint, Account>();
+                Username2Account = new Dictionary<string, Account>();
 
-            // Create empty maps
-            Client2Account = new Dictionary<SOEClient, Account>();
-            ID2Client = new Dictionary<uint, SOEClient>();
-            ID2Account = new Dictionary<uint, Account>();
-            Username2Account = new Dictionary<string, Account>();
+                Log = Server.Logger.GetLogger("AccountManager");
+                Log.Info("Service constructed");
+            }
 
-            // Handle disconnect event
-            Server.ConnectionManager.OnDisconnect += OnClientDisconnect;
+            // LibSOE's bundled ConnectionManager has no OnDisconnect event.
+            // Watch its live client slots and remove accounts whose client was
+            // disconnected or whose slot has since been reused.
+            Thread cleanupThread = new Thread(CleanupDisconnectedClients);
+            cleanupThread.Name = "AccountManager::DisconnectCleanup";
+            cleanupThread.IsBackground = true;
+            cleanupThread.Start();
+        }
 
-            // Logging
-            Log = Server.Logger.GetLogger("AccountManager");
-            Log.Info("Service constructed");
+        private static void CleanupDisconnectedClients()
+        {
+            while (Server.Running)
+            {
+                lock (Sync)
+                {
+                    if (Client2Account != null)
+                    {
+                        foreach (KeyValuePair<SOEClient, Account> entry in Client2Account.ToArray())
+                        {
+                            SOEClient client = entry.Key;
+                            if (Server.ConnectionManager.GetClient(client.GetClientID()) != client)
+                            {
+                                LogoutInternal(entry.Value);
+                            }
+                        }
+                    }
+                }
+
+                Thread.Sleep(1000);
+            }
         }
 
         public static void OnClientDisconnect(SOEClient client)
         {
-            // Does this client have an account?
-            if (Client2Account.ContainsKey(client))
+            lock (Sync)
             {
-                // Log them out!
-                Logout(GetAccount(client));
+                Account account;
+                if (Client2Account.TryGetValue(client, out account))
+                {
+                    LogoutInternal(account);
+                }
             }
         }
 
         public static void AddAccount(SOEClient owner, Account account)
         {
-
-            // Are they already logged in?
-            if (ID2Account.ContainsKey(account.ID))
+            lock (Sync)
             {
-                // Uh oh! Log the old one out..
-                Log.Warn("A user has logged into an account that is already in use! Disconnecting old client!");
-                ID2Client[account.ID].Disconnect((ushort) SOEDisconnectReasons.NewConnection);
+                // Remove a stale session or log out an existing session before
+                // inserting the replacement, since LibSOE emits no disconnect event.
+                Account existingAccount;
+                if (ID2Account.TryGetValue(account.ID, out existingAccount))
+                {
+                    Log.Warn("A user has logged into an account that is already in use! Disconnecting old client!");
+                    SOEClient oldClient = ID2Client[account.ID];
+                    oldClient.Disconnect((ushort)SOEDisconnectReasons.NewConnection);
+                    LogoutInternal(existingAccount);
+                }
+
+                // Avoid stale username entries as well.
+                Account existingUsername;
+                if (Username2Account.TryGetValue(account.Username, out existingUsername))
+                {
+                    LogoutInternal(existingUsername);
+                }
+
+                Log.InfoFormat("Account '{0}' has successfully logged in!", account.Username);
+
+                ID2Client.Add(account.ID, owner);
+                Client2Account.Add(owner, account);
+                ID2Account.Add(account.ID, account);
+                Username2Account.Add(account.Username, account);
             }
-
-            // Log
-            Log.InfoFormat("Account '{0}' has successfully logged in!", account.Username);
-
-            // Add the new one!
-            ID2Client.Add(account.ID, owner);
-            Client2Account.Add(owner, account);
-            ID2Account.Add(account.ID, account);
-            Username2Account.Add(account.Username, account);
         }
-        
+
         public static void Logout(Account account)
         {
-            // Log
-            Log.InfoFormat("Logging out '{0}'!", account.Username);
-
-            // Is this user logged in?
-            if (ID2Account.ContainsKey(account.ID))
+            lock (Sync)
             {
-                // Remove them from our maps..
-                Client2Account.Remove(ID2Client[account.ID]);
+                LogoutInternal(account);
+            }
+        }
+
+        private static void LogoutInternal(Account account)
+        {
+            if (account == null)
+            {
+                return;
+            }
+
+            if (Log != null)
+            {
+                Log.InfoFormat("Logging out '{0}'!", account.Username);
+            }
+
+            SOEClient client;
+            if (ID2Account.TryGetValue(account.ID, out Account currentAccount) && currentAccount == account)
+            {
+                if (ID2Client.TryGetValue(account.ID, out client))
+                {
+                    Client2Account.Remove(client);
+                }
+
                 ID2Client.Remove(account.ID);
                 ID2Account.Remove(account.ID);
+            }
+
+            if (Username2Account.TryGetValue(account.Username, out Account usernameAccount) && usernameAccount == account)
+            {
                 Username2Account.Remove(account.Username);
             }
         }
 
         public static Account GetAccount(SOEClient client)
         {
-            if (Client2Account.ContainsKey(client))
+            lock (Sync)
             {
-                return Client2Account[client];
+                Account account;
+                return Client2Account.TryGetValue(client, out account) ? account : null;
             }
-
-            return null;
         }
-
 
         public static Account GetAccount(uint id)
         {
-            if (ID2Account.ContainsKey(id))
+            lock (Sync)
             {
-                return ID2Account[id];
+                Account account;
+                return ID2Account.TryGetValue(id, out account) ? account : null;
             }
-
-            return null;
         }
 
         public static Account GetAccount(string username)
         {
-            if (Username2Account.ContainsKey(username))
+            lock (Sync)
             {
-                return Username2Account[username];
+                Account account;
+                return Username2Account.TryGetValue(username, out account) ? account : null;
             }
-
-            return null;
         }
 
         public static SOEClient GetClient(uint id)
         {
-            if (ID2Client.ContainsKey(id))
+            lock (Sync)
             {
-                return ID2Client[id];
+                SOEClient client;
+                return ID2Client.TryGetValue(id, out client) ? client : null;
             }
-
-            return null;
         }
 
         public static bool IsAuthorized(SOEClient client)
         {
-            return Client2Account.ContainsKey(client);
+            lock (Sync)
+            {
+                return Client2Account.ContainsKey(client);
+            }
         }
     }
 }
