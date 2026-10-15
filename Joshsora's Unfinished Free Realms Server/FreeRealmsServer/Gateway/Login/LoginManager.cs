@@ -96,6 +96,33 @@ namespace Gateway.Login
         public static void HandleLoginRequest(LoginRequest request)
         {
             // Get variables
+            // Local development mode deliberately bypasses the retired WebAPI.
+            // Keep this enabled only for a server bound to localhost.
+            if ((bool)Server.ApplicationConfiguration["LocalMode"])
+            {
+                if (request.Token != "LOCAL-ONLY")
+                {
+                    Log.ErrorFormat("Rejected invalid local login ticket from client {0}!", request.Client.GetClientID());
+                    SendLoginResponse(request.Client, false);
+                    request.Client.Disconnect((ushort)SOEDisconnectReasons.Application);
+                    return;
+                }
+
+                Account localAccount = new Account
+                {
+                    ID = 1,
+                    Username = "LocalPlayer",
+                    AccessLevel = 200,
+                    Banned = false
+                };
+
+                Log.Info("Successful local development login!");
+                SendLoginResponse(request.Client, true);
+                AccountManager.AddAccount(request.Client, localAccount);
+                SendInitialWorldState(request.Client);
+                return;
+            }
+
             string loginServer = Server.ApplicationConfiguration["LoginServer"];
             string apiRequest = loginServer + "consumeToken/";
             JObject response = null;
@@ -159,57 +186,7 @@ namespace Gateway.Login
                         // Manage the account on the gateway
                         AccountManager.AddAccount(request.Client, userAccount);
 
-                        // Send the connection to the world server
-                        // Server.InternalManager.GetConnection("World").RouteConnection(request.Client, response.ToString());
-                        // Gateway.InternalWorldConnection.RouteConnection(request.Client, response.ToString());
-
-                        // The world server will then do a: 'Which internal connection is managing this connection?',
-                        // assign the client a world-clientID, map clients to internal servers, and then send packets
-                        // to us with a tagged "reciever". "reciever" will be the clientId on our side..
-
-                        // Gateway1 -> { Client, 0x01 } -> World { Client, Gateway1, 0x01, 0x04 }
-                        // Client (0x01) <- Gateway1 <- { 0x01, data } <- World { 0x04 -> 0x01 (Gateway1) }
-
-                        // TODO: ^
-
-                        // The world server would then send the client the Environment, World, Character, etc..
-                        // For now, send that stuff from the gateway:
-
-                        // Environment
-                        SOEWriter commandWriter = new SOEWriter(0xA6, true);
-                        byte[] environmentName = Encoding.ASCII.GetBytes("live");
-                        commandWriter.AddHostUInt32((uint)environmentName.Length);
-                        commandWriter.AddBytes(environmentName);
-                        byte[] environmentCommand = commandWriter.GetRaw();
-
-                        SOEWriter writer = new SOEWriter((ushort)GatewayMessages.EnqueueCommand, true);
-                        writer.AddBoolean(true);
-                        writer.AddHostUInt32((uint)environmentCommand.Length);
-                        writer.AddBytes(environmentCommand);
-                        SOEMessage environmentMessage = writer.GetFinalSOEMessage(request.Client);
-
-                        // ZoneInfo
-                        commandWriter = new SOEWriter(0x2B, true);
-                        byte[] worldName = Encoding.ASCII.GetBytes("FabledRealms");
-                        commandWriter.AddHostUInt32((uint)worldName.Length);
-                        commandWriter.AddBytes(worldName);
-                        commandWriter.AddHostUInt32(2);
-                        commandWriter.AddHostUInt32(0);
-                        commandWriter.AddHostUInt32(0);
-                        commandWriter.AddUInt32(5);
-                        commandWriter.AddHostUInt32(0);
-                        commandWriter.AddBoolean(false);
-                        byte[] worldCommand = commandWriter.GetRaw();
-
-                        writer = new SOEWriter((ushort)GatewayMessages.EnqueueCommand, true);
-                        writer.AddBoolean(true);
-                        writer.AddHostUInt32((uint)worldCommand.Length);
-                        writer.AddBytes(worldCommand);
-                        SOEMessage worldMessage = writer.GetFinalSOEMessage(request.Client);
-
-                        // Send!
-                        request.Client.SendMessage(environmentMessage);
-                        request.Client.SendMessage(worldMessage);
+                        SendInitialWorldState(request.Client);
                     }
                 }
                 else
@@ -222,6 +199,44 @@ namespace Gateway.Login
                     request.Client.Disconnect((ushort)SOEDisconnectReasons.Application);
                 }
             }
+        }
+
+        private static void SendInitialWorldState(SOEClient client)
+        {
+            // The world-routing handshake is not implemented yet. Send the same
+            // environment and zone announcements the original gateway used.
+            SOEWriter commandWriter = new SOEWriter(0xA6, true);
+            byte[] environmentName = Encoding.ASCII.GetBytes("live");
+            commandWriter.AddHostUInt32((uint)environmentName.Length);
+            commandWriter.AddBytes(environmentName);
+            byte[] environmentCommand = commandWriter.GetRaw();
+
+            SOEWriter writer = new SOEWriter((ushort)GatewayMessages.EnqueueCommand, true);
+            writer.AddBoolean(true);
+            writer.AddHostUInt32((uint)environmentCommand.Length);
+            writer.AddBytes(environmentCommand);
+            SOEMessage environmentMessage = writer.GetFinalSOEMessage(client);
+
+            commandWriter = new SOEWriter(0x2B, true);
+            byte[] worldName = Encoding.ASCII.GetBytes("FabledRealms");
+            commandWriter.AddHostUInt32((uint)worldName.Length);
+            commandWriter.AddBytes(worldName);
+            commandWriter.AddHostUInt32(2);
+            commandWriter.AddHostUInt32(0);
+            commandWriter.AddHostUInt32(0);
+            commandWriter.AddUInt32(5);
+            commandWriter.AddHostUInt32(0);
+            commandWriter.AddBoolean(false);
+            byte[] worldCommand = commandWriter.GetRaw();
+
+            writer = new SOEWriter((ushort)GatewayMessages.EnqueueCommand, true);
+            writer.AddBoolean(true);
+            writer.AddHostUInt32((uint)worldCommand.Length);
+            writer.AddBytes(worldCommand);
+            SOEMessage worldMessage = writer.GetFinalSOEMessage(client);
+
+            client.SendMessage(environmentMessage);
+            client.SendMessage(worldMessage);
         }
 
         public static void SendLoginResponse(SOEClient client, bool success)
